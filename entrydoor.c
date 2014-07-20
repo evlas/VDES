@@ -8,12 +8,20 @@
 
 #define THIS_FILE "ENTRYDOOR"
 
+
 /* Callback called by the library upon receiving incoming call */
 static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id, pjsip_rx_data *rdata) {
  pjsua_call_info ci;
 
+ pjsua_acc_config acc_cfg;
+ pjsua_call_setting call_setting;
+
  PJ_UNUSED_ARG(acc_id);
  PJ_UNUSED_ARG(rdata);
+
+ acc_cfg.vid_cap_dev = PJMEDIA_VID_DEFAULT_CAPTURE_DEV;
+ acc_cfg.vid_out_auto_transmit = PJ_TRUE;
+ call_setting.flag = PJSUA_CALL_INCLUDE_DISABLED_MEDIA;
 
  pjsua_call_get_info(call_id, &ci);
 
@@ -64,11 +72,19 @@ static void led_registered(int value) {
  */
 int main(int argc, char *argv[]) {
  int callbutton = 0;
+
  pjsua_acc_id acc_id;
  pjsua_acc_info acc_info;
  pj_status_t status;
+ 
+ pjsua_acc_config acc_cfg;
+ pjsua_call_setting call_setting;
 
  struct config configstruct;
+
+ acc_cfg.vid_cap_dev = PJMEDIA_VID_DEFAULT_CAPTURE_DEV;
+ acc_cfg.vid_out_auto_transmit = PJ_TRUE;
+ call_setting.flag = PJSUA_CALL_INCLUDE_DISABLED_MEDIA;
 
  if (open_gpio() != 0) {
   return(1);
@@ -88,6 +104,7 @@ int main(int argc, char *argv[]) {
  {
   pjsua_config cfg;
   pjsua_logging_config log_cfg;
+  pjsua_media_config media_cfg;
 
   pjsua_config_default(&cfg);
   cfg.cb.on_incoming_call = &on_incoming_call;
@@ -97,7 +114,9 @@ int main(int argc, char *argv[]) {
   pjsua_logging_config_default(&log_cfg);
   log_cfg.console_level = configstruct.loglevel; //4
 
-  status = pjsua_init(&cfg, &log_cfg, NULL);
+  pjsua_media_config_default(&media_cfg);
+
+  status = pjsua_init(&cfg, &log_cfg, &media_cfg);
   if (status != PJ_SUCCESS) {
    error_exit("Error in pjsua_init()", status);
   }
