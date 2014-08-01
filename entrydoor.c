@@ -13,14 +13,11 @@
 static void on_incoming_call(pjsua_acc_id acc_id, pjsua_call_id call_id, pjsip_rx_data *rdata) {
  pjsua_call_info ci;
 
- pjsua_acc_config acc_cfg;
  pjsua_call_setting call_setting;
 
  PJ_UNUSED_ARG(acc_id);
  PJ_UNUSED_ARG(rdata);
 
- acc_cfg.vid_cap_dev = PJMEDIA_VID_DEFAULT_CAPTURE_DEV;
- acc_cfg.vid_out_auto_transmit = PJ_TRUE;
  call_setting.flag = PJSUA_CALL_INCLUDE_DISABLED_MEDIA;
 
  pjsua_call_get_info(call_id, &ci);
@@ -77,13 +74,10 @@ int main(int argc, char *argv[]) {
  pjsua_acc_info acc_info;
  pj_status_t status;
  
- pjsua_acc_config acc_cfg;
  pjsua_call_setting call_setting;
 
  struct config configstruct;
 
- acc_cfg.vid_cap_dev = PJMEDIA_VID_DEFAULT_CAPTURE_DEV;
- acc_cfg.vid_out_auto_transmit = PJ_TRUE;
  call_setting.flag = PJSUA_CALL_INCLUDE_DISABLED_MEDIA;
 
  if (open_gpio() != 0) {
@@ -163,6 +157,9 @@ int main(int argc, char *argv[]) {
   cfg.cred_info[0].username = pj_str(configstruct.user);
   cfg.cred_info[0].data_type = PJSIP_CRED_DATA_PLAIN_PASSWD;
   cfg.cred_info[0].data = pj_str(configstruct.password);
+
+  cfg.vid_cap_dev = PJMEDIA_VID_DEFAULT_CAPTURE_DEV;
+  cfg.vid_out_auto_transmit = PJ_TRUE;
 
   status = pjsua_acc_add(&cfg, PJ_TRUE, &acc_id);
   if (status != PJ_SUCCESS) {

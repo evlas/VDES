@@ -1,6 +1,7 @@
 #include "gpio.h"
 
 int open_gpio (void) {
+
  if (!bcm2835_init()) {
   return (1);
  }
@@ -14,7 +15,7 @@ int open_gpio (void) {
  // Set the pin to be an output
  bcm2835_gpio_fsel(LED1, BCM2835_GPIO_FSEL_OUTP);
  bcm2835_gpio_fsel(LED2, BCM2835_GPIO_FSEL_OUTP);
- 
+
  return (0);
 }
 
