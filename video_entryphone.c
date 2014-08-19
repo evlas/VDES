@@ -191,6 +191,7 @@ int main(int argc, char *argv[])
 	
 	// app loop
 	for (;;) {
+		// Codice di chiamata, lo sleep èusato solo per non consumare tutta la cpu sostituire con un thread che legge i tasti
 		pj_str_t uri = pj_str("sip:1012@pbx.vmh.it");
 		sleep(10);
 		pjsua_call_make_call(acc_id, &uri, 0, NULL, NULL, NULL);
