@@ -1,8 +1,8 @@
-VDES
+entryphone
 ====
 
 Raspberry Video Entry Phone System
 
-PJSIP 2.2.1 (with Video features)
+PJSIP 2.3 (with Video features)
 
 
