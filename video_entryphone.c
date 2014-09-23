@@ -69,6 +69,7 @@ struct app_config {
 	char *sip_password;
 	int   log_level;
 	char *log_file;
+    int   video;     //0 disabled 1 enabled
 	struct dtmf_config dtmf_cfg[MAX_DTMF_SETTINGS];
 } app_cfg;  
 
@@ -105,6 +106,9 @@ int main(int argc, char *argv[])
 {
 	// init LOG level
 	app_cfg.log_level = PJSUA_LOG_LEVEL;
+
+    // video
+    app_cfg.video = PJMEDIA_HAS_VIDEO;
 
 	// init dtmf settings (dtmf 0 is reserved for exit call)
 	int i;
@@ -173,22 +177,21 @@ int main(int argc, char *argv[])
 		
 		if (d_cfg->active == 1)
 		{
-			printf("SSSSSS\n"); 
+			printf("DTMF %d active\n", i); 
 		}
 	}
 	
 	//PJ_LOG(3,(THIS_FILE, "Done.\n"));
-	
-	
 	
 	// setup up sip library pjsua
 	setup_sip();
 	
 	// create account and register to sip server
 	register_sip();
-	
-	printf("Camera: %d\n", pjsua_vid_dev_count());
-	
+	if (app_cfg.video != 0) {
+	    printf("Camera: %d\n", pjsua_vid_dev_count());
+    }
+    
 	// app loop
 	for (;;) {
 		// Codice di chiamata, lo sleep èusato solo per non consumare tutta la cpu sostituire con un thread che legge i tasti
@@ -314,6 +317,13 @@ static void parse_config_file(char *cfg_file)
 			if (!strcasecmp(arg, "ll")) 
 			{
 				app_cfg.log_level = atoi(trim_string(arg_val));
+				continue;
+			}
+
+			// check for video
+			if (!strcasecmp(arg, "vd")) 
+			{
+				app_cfg.video = atoi(trim_string(arg_val));
 				continue;
 			}
 			
@@ -472,11 +482,12 @@ static void register_sip(void)
 	cfg.cred_info[0].data_type = PJSIP_CRED_DATA_PLAIN_PASSWD;
 	cfg.cred_info[0].data = pj_str(app_cfg.sip_password);
 	
-	cfg.vid_out_auto_transmit = PJ_TRUE; //Vito
-	cfg.vid_in_auto_show = PJ_FALSE; //Vito
-	cfg.vid_cap_dev = PJMEDIA_VID_DEFAULT_CAPTURE_DEV; //Vito
-	cfg.vid_rend_dev = PJMEDIA_VID_DEFAULT_RENDER_DEV; //Vito
-	
+	if (app_cfg.video != 0) {
+	    cfg.vid_out_auto_transmit = PJ_TRUE; //Vito
+	    cfg.vid_in_auto_show = PJ_FALSE; //Vito
+	    cfg.vid_cap_dev = PJMEDIA_VID_DEFAULT_CAPTURE_DEV; //Vito
+	    cfg.vid_rend_dev = PJMEDIA_VID_DEFAULT_RENDER_DEV; //Vito
+    }
 	// add account
 	status = pjsua_acc_add(&cfg, PJ_TRUE, &acc_id);
 	if (status != PJ_SUCCESS) error_exit("Error adding account", status);
@@ -509,22 +520,23 @@ static void on_call_media_state(pjsua_call_id call_id)
 	pjsua_call_info ci; 
 	pjsua_call_get_info(call_id, &ci);
 	
-	pjsua_call_vid_strm_op op = PJSUA_CALL_VID_STRM_CHANGE_DIR;
-	pjsua_call_vid_strm_op_param vop;
+	if (app_cfg.video != 0) {
+	    pjsua_call_vid_strm_op op = PJSUA_CALL_VID_STRM_CHANGE_DIR;
+	    pjsua_call_vid_strm_op_param vop;
 	
-	vop.med_idx = 0;
-	if (0 <= vop.med_idx && vop.med_idx < ci.media_cnt && ci.media[vop.med_idx].type == PJMEDIA_TYPE_VIDEO) {
-		if (ci.media[vop.med_idx].status == PJSUA_CALL_MEDIA_NONE || ci.media[vop.med_idx].dir == PJMEDIA_DIR_NONE) {
-			vop.dir = PJMEDIA_DIR_ENCODING;
-		} else {
-			op = PJSUA_CALL_VID_STRM_START_TRANSMIT;
-		}
-	} else {
-		return;
-	}
-	
-	pj_status_t status = PJ_ENOTFOUND;
-	pjsua_call_set_vid_strm(call_id, op, &vop);
+   	    vop.med_idx = 0;
+	    if (0 <= vop.med_idx && vop.med_idx < ci.media_cnt && ci.media[vop.med_idx].type == PJMEDIA_TYPE_VIDEO) {
+		    if (ci.media[vop.med_idx].status == PJSUA_CALL_MEDIA_NONE || ci.media[vop.med_idx].dir == PJMEDIA_DIR_NONE) {
+			    vop.dir = PJMEDIA_DIR_ENCODING;
+		    } else {
+			    op = PJSUA_CALL_VID_STRM_START_TRANSMIT;
+		    }
+	    } else {
+		    return;
+	    }
+	    pj_status_t status = PJ_ENOTFOUND;
+        pjsua_call_set_vid_strm(call_id, op, &vop);
+    }
 
 	// check state if call is established/active
 	if (ci.media_status == PJSUA_CALL_MEDIA_ACTIVE) {
