@@ -78,16 +78,16 @@ struct app_config {
 	char *sip_password;
 	int   log_level;
 	char *log_file;
-    int   video;     //0 disabled 1 enabled
-    char  key[32];
+	int   video;     //0 disabled 1 enabled
+	char *key;
 	struct dtmf_config dtmf_cfg[MAX_DTMF_SETTINGS];
 } app_cfg;  
 
 // struct for io
-struct d_ext_io {
-    int buf[1024]; 
-    pthread_mutex_t mutex;
-};
+struct d_external_io {
+	int buf[1024]; 
+	pthread_mutex_t mutex;
+} d_ext_io;
 
 // global helper vars
 int call_confirmed = 0;
@@ -114,7 +114,7 @@ static void signal_handler(int);
 static char *trim_string(char *);
 
 // header of tcp server
-static void f_ext_io(pjsua_acc_id, pjsua_call_id, pjsip_rx_data *);
+static void f_ext_io(void);
 
 // header of app-control-methods
 static void app_exit();
@@ -126,8 +126,8 @@ int main(int argc, char *argv[])
 	// init LOG level
 	app_cfg.log_level = PJSUA_LOG_LEVEL;
 
-    // video
-    app_cfg.video = PJMEDIA_HAS_VIDEO;
+	// video
+	app_cfg.video = PJMEDIA_HAS_VIDEO;
 
 	// init dtmf settings (dtmf 0 is reserved for exit call)
 	int i;
@@ -209,8 +209,8 @@ int main(int argc, char *argv[])
 	register_sip();
 	if (app_cfg.video != 0) {
 	    printf("Camera: %d\n", pjsua_vid_dev_count());
-    }
-    
+	}
+
 	// app loop
 	for (;;) {
 		// Codice di chiamata, lo sleep èusato solo per non consumare tutta la cpu sostituire con un thread che legge i tasti
@@ -695,118 +695,132 @@ static void error_exit(const char *title, pj_status_t status)
 }
 
 // f_ext_io function
-static void f_ext_io () {
-/ *******select.c*********/
-/ *******Using select() for I/O multiplexing */
- /* master file descriptor list */
-fd_set master;
-/* temp file descriptor list for select() */
-fd_set read_fds;
-/* server address */
-struct sockaddr_in serveraddr;
+static void f_ext_io () 
+{
+	/*******select.c*********/
+	/*******Using select() for I/O multiplexing */
+	/* master file descriptor list */
+	fd_set master;
+	/* temp file descriptor list for select() */
+	fd_set read_fds;
+	/* server address */
+	struct sockaddr_in serveraddr;
 
-/* client address */
-struct sockaddr_in clientaddr;
-/* maximum file descriptor number */
-int fdmax;
-/* listening socket descriptor */
-int listener;
-/* newly accept()ed socket descriptor */
-int newfd;
-/* buffer for client data */
-char buf[1024];
-int nbytes;
-/* for setsockopt() SO_REUSEADDR, below */
-int yes = 1;
-int addrlen;
-int i, j;
-/* clear the master and temp sets */
-FD_ZERO(&master);
-FD_ZERO(&read_fds);
+	/* client address */
+	struct sockaddr_in clientaddr;
+	/* maximum file descriptor number */
+	int fdmax;
+	/* listening socket descriptor */
+	int listener;
+	/* newly accept()ed socket descriptor */
+	int newfd;
+	/* buffer for client data */
+	char buf[1024];
+	int nbytes;
+	/* for setsockopt() SO_REUSEADDR, below */
+	int yes = 1;
+	int addrlen;
+	int i, j;
+	/* clear the master and temp sets */
+	FD_ZERO(&master);
+	FD_ZERO(&read_fds);
  
-/* get the listener */
-if((listener = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
-    perror("Server-socket() error!");
-    /*just exit lol!*/
-    exit(1);
-}
-printf("Server-socket() is OK...\n");
+	/* get the listener */
+	if((listener = socket(AF_INET, SOCK_STREAM, 0)) == -1) 
+	{
+		perror("Server-socket() error!");
+		/*just exit lol!*/
+		exit(1);
+	}
+	printf("Server-socket() is OK...\n");
 
-/*"address already in use" error message */
-if(setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
-    perror("Server-setsockopt() error!");
-    exit(1);
-}
-printf("Server-setsockopt() is OK...\n");
+	/*"address already in use" error message */
+	if(setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) 
+	{
+		perror("Server-setsockopt() error!");
+		exit(1);
+	}
+	printf("Server-setsockopt() is OK...\n");
  
-/* bind */
-serveraddr.sin_family = AF_INET;
-serveraddr.sin_addr.s_addr = INADDR_ANY;
-serveraddr.sin_port = htons(TCP_PORT);
-memset(&(serveraddr.sin_zero), 0, 8);
+	/* bind */
+	serveraddr.sin_family = AF_INET;
+	serveraddr.sin_addr.s_addr = INADDR_ANY;
+	serveraddr.sin_port = htons(TCP_PORT);
+	memset(&(serveraddr.sin_zero), 0, 8);
  
-if(bind(listener, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) == -1) {
-    perror("Server-bind() error!");
-    exit(1);
-}
-printf("Server-bind() is OK...\n");
+	if(bind(listener, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) == -1) 
+	{
+		perror("Server-bind() error!");
+		exit(1);
+	}
+	printf("Server-bind() is OK...\n");
  
-/* listen */
-if(listen(listener, 10) == -1) {
-    perror("Server-listen() error!");
-    exit(1);
-}
-printf("Server-listen() is OK...\n");
+	/* listen */
+	if(listen(listener, 10) == -1) 
+	{
+		perror("Server-listen() error!");
+		exit(1);
+	}
+	printf("Server-listen() is OK...\n");
  
-/* add the listener to the master set */
-FD_SET(listener, &master);
-/* keep track of the biggest file descriptor */
-fdmax = listener; /* so far, it's this one*/
+	/* add the listener to the master set */
+	FD_SET(listener, &master);
+	/* keep track of the biggest file descriptor */
+	fdmax = listener; /* so far, it's this one*/
  
-/* loop */
-for(;;) {
-    /* copy it */
-    read_fds = master;
+	/* loop */
+	for(;;) 
+	{
+		/* copy it */
+		read_fds = master;
  
-    if(select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1) {
-        perror("Server-select() error!");
-        exit(1);
-    }
-    printf("Server-select() is OK...\n");
+		if(select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1) 
+		{
+			perror("Server-select() error!");
+			exit(1);
+		}
+		printf("Server-select() is OK...\n");
  
-    /*run through the existing connections looking for data to be read*/
-    for(i = 0; i <= fdmax; i++) {
-        if(FD_ISSET(i, &read_fds)) { /* we got one... */
-            if(i == listener) {
-                 /* handle new connections */
-                addrlen = sizeof(clientaddr);
-                if((newfd = accept(listener, (struct sockaddr *)&clientaddr, &addrlen)) == -1) {
-                    perror("Server-accept() error!");
-                } else {
-                    printf("Server-accept() is OK...\n");
+		/*run through the existing connections looking for data to be read*/
+		for(i = 0; i <= fdmax; i++) 
+		{
+			if(FD_ISSET(i, &read_fds)) 
+			{ /* we got one... */
+				if(i == listener) 
+				{
+					/* handle new connections */
+					addrlen = sizeof(clientaddr);
+					if((newfd = accept(listener, (struct sockaddr *)&clientaddr, &addrlen)) == -1) 
+					{
+						perror("Server-accept() error!");
+					} else {
+						printf("Server-accept() is OK...\n");
  
-                    FD_SET(newfd, &master); /* add to master set */
-                    if(newfd > fdmax) { /* keep track of the maximum */
-                        fdmax = newfd;
-                    }
-                    printf("%s: New connection from %s on socket %d\n", argv[0], inet_ntoa(clientaddr.sin_addr), newfd);
-                }
-            } else {
-                /* handle data from a client */
-                if((nbytes = recv(i, buf, sizeof(buf), 0)) <= 0) {
-                    /* got error or connection closed by client */
-                    if(nbytes == 0) {
-                        /* connection closed */
-                        printf("%s: socket %d hung up\n", argv[0], i);
-                    } else {
-                        perror("recv() error!");
-                    }
-                    /* close it... */
-                    close(i);
-                
-                    /* remove from master set */
-                    FD_CLR(i, &master);
-                } else {
+						FD_SET(newfd, &master); /* add to master set */
+						if(newfd > fdmax) 
+						{ /* keep track of the maximum */
+							fdmax = newfd;
+						}
+						printf("%s: New connection from %s on socket %d\n", THIS_FILE, inet_ntoa(clientaddr.sin_addr), newfd);
+					}
+				} else {
+					/* handle data from a client */
+					if((nbytes = recv(i, buf, sizeof(buf), 0)) <= 0) 
+					{
+						/* got error or connection closed by client */
+						if(nbytes == 0) 
+						{
+							/* connection closed */
+							printf("%s: socket %d hung up\n", THIS_FILE, i);
+						} else {
+							perror("recv() error!");
+						}
+					/* close it... */
+					close(i);
+
+					/* remove from master set */
+					FD_CLR(i, &master);
+					} else {
                     /* we got some data from a client*/
 //                    for(j = 0; j <= fdmax; j++) {
 //                        /* send to everyone! */
@@ -819,14 +833,16 @@ for(;;) {
 //                            }
 //                        }
 //                    }
-                      pthread_mutex_lock(&d_ext_io.mutex);
-                      
-                      memset(&(d_ext_io.buf), 0, 8);
-                      memcpy(&(d_ext_io.buf), &buf, nbytes);
-                      
-                      pthread_mutex_unlock(&d_ext_io.mutex);
-                }
-            }
-        }
-    }
+						pthread_mutex_lock(&d_ext_io.mutex);
+
+						memset(&(d_ext_io.buf), 0, 8);
+						memcpy(&(d_ext_io.buf), &buf, nbytes);
+
+						pthread_mutex_unlock(&d_ext_io.mutex);
+					}
+				}
+			}
+		}
+	}
 }
+
