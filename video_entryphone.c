@@ -41,7 +41,13 @@ Lesser General Public License for more details.
 #include <signal.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 #include <unistd.h>
+
+#include <sys/types.h>
+#include <sys/socket.h>
+#include <netinet/in.h>
+#include <arpa/inet.h>
 
 #include <pjsua-lib/pjsua.h>
 
@@ -50,6 +56,9 @@ Lesser General Public License for more details.
 
 // define max supported dtmf settings
 #define MAX_DTMF_SETTINGS 9
+
+/* SERVER TCP port*/
+#define TCP_PORT 2020
 
 #define THIS_FILE "video_entryphone"
 
@@ -70,8 +79,15 @@ struct app_config {
 	int   log_level;
 	char *log_file;
     int   video;     //0 disabled 1 enabled
+    char  key[32];
 	struct dtmf_config dtmf_cfg[MAX_DTMF_SETTINGS];
 } app_cfg;  
+
+// struct for io
+struct d_ext_io {
+    int buf[1024]; 
+    pthread_mutex_t mutex;
+};
 
 // global helper vars
 int call_confirmed = 0;
@@ -96,6 +112,9 @@ static void on_call_state(pjsua_call_id, pjsip_event *);
 static void on_dtmf_digit(pjsua_call_id, int);
 static void signal_handler(int);
 static char *trim_string(char *);
+
+// header of tcp server
+static void f_ext_io(pjsua_acc_id, pjsua_call_id, pjsip_rx_data *);
 
 // header of app-control-methods
 static void app_exit();
@@ -306,7 +325,7 @@ static void parse_config_file(char *cfg_file)
 				continue;
 			}
 			
-			// check for sip domain argument
+			// check for sip password
 			if (!strcasecmp(arg, "sp")) 
 			{
 				app_cfg.sip_password = trim_string(arg_val);
@@ -324,6 +343,13 @@ static void parse_config_file(char *cfg_file)
 			if (!strcasecmp(arg, "vd")) 
 			{
 				app_cfg.video = atoi(trim_string(arg_val));
+				continue;
+			}
+
+			// check for key
+			if (!strcasecmp(arg, "ky")) 
+			{
+				app_cfg.key = trim_string(arg_val);
 				continue;
 			}
 			
@@ -668,4 +694,139 @@ static void error_exit(const char *title, pj_status_t status)
 	}
 }
 
+// f_ext_io function
+static void f_ext_io () {
+/ *******select.c*********/
+/ *******Using select() for I/O multiplexing */
+ /* master file descriptor list */
+fd_set master;
+/* temp file descriptor list for select() */
+fd_set read_fds;
+/* server address */
+struct sockaddr_in serveraddr;
 
+/* client address */
+struct sockaddr_in clientaddr;
+/* maximum file descriptor number */
+int fdmax;
+/* listening socket descriptor */
+int listener;
+/* newly accept()ed socket descriptor */
+int newfd;
+/* buffer for client data */
+char buf[1024];
+int nbytes;
+/* for setsockopt() SO_REUSEADDR, below */
+int yes = 1;
+int addrlen;
+int i, j;
+/* clear the master and temp sets */
+FD_ZERO(&master);
+FD_ZERO(&read_fds);
+ 
+/* get the listener */
+if((listener = socket(AF_INET, SOCK_STREAM, 0)) == -1) {
+    perror("Server-socket() error!");
+    /*just exit lol!*/
+    exit(1);
+}
+printf("Server-socket() is OK...\n");
+
+/*"address already in use" error message */
+if(setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &yes, sizeof(int)) == -1) {
+    perror("Server-setsockopt() error!");
+    exit(1);
+}
+printf("Server-setsockopt() is OK...\n");
+ 
+/* bind */
+serveraddr.sin_family = AF_INET;
+serveraddr.sin_addr.s_addr = INADDR_ANY;
+serveraddr.sin_port = htons(TCP_PORT);
+memset(&(serveraddr.sin_zero), 0, 8);
+ 
+if(bind(listener, (struct sockaddr *)&serveraddr, sizeof(serveraddr)) == -1) {
+    perror("Server-bind() error!");
+    exit(1);
+}
+printf("Server-bind() is OK...\n");
+ 
+/* listen */
+if(listen(listener, 10) == -1) {
+    perror("Server-listen() error!");
+    exit(1);
+}
+printf("Server-listen() is OK...\n");
+ 
+/* add the listener to the master set */
+FD_SET(listener, &master);
+/* keep track of the biggest file descriptor */
+fdmax = listener; /* so far, it's this one*/
+ 
+/* loop */
+for(;;) {
+    /* copy it */
+    read_fds = master;
+ 
+    if(select(fdmax+1, &read_fds, NULL, NULL, NULL) == -1) {
+        perror("Server-select() error!");
+        exit(1);
+    }
+    printf("Server-select() is OK...\n");
+ 
+    /*run through the existing connections looking for data to be read*/
+    for(i = 0; i <= fdmax; i++) {
+        if(FD_ISSET(i, &read_fds)) { /* we got one... */
+            if(i == listener) {
+                 /* handle new connections */
+                addrlen = sizeof(clientaddr);
+                if((newfd = accept(listener, (struct sockaddr *)&clientaddr, &addrlen)) == -1) {
+                    perror("Server-accept() error!");
+                } else {
+                    printf("Server-accept() is OK...\n");
+ 
+                    FD_SET(newfd, &master); /* add to master set */
+                    if(newfd > fdmax) { /* keep track of the maximum */
+                        fdmax = newfd;
+                    }
+                    printf("%s: New connection from %s on socket %d\n", argv[0], inet_ntoa(clientaddr.sin_addr), newfd);
+                }
+            } else {
+                /* handle data from a client */
+                if((nbytes = recv(i, buf, sizeof(buf), 0)) <= 0) {
+                    /* got error or connection closed by client */
+                    if(nbytes == 0) {
+                        /* connection closed */
+                        printf("%s: socket %d hung up\n", argv[0], i);
+                    } else {
+                        perror("recv() error!");
+                    }
+                    /* close it... */
+                    close(i);
+                
+                    /* remove from master set */
+                    FD_CLR(i, &master);
+                } else {
+                    /* we got some data from a client*/
+//                    for(j = 0; j <= fdmax; j++) {
+//                        /* send to everyone! */
+//                        if(FD_ISSET(j, &master)) {
+//                            /* except the listener and ourselves */
+//                            if(j != listener && j != i) {
+//                                if(send(j, buf, nbytes, 0) == -1) {
+//                                    perror("send() error!");
+//                                }
+//                            }
+//                        }
+//                    }
+                      pthread_mutex_lock(&d_ext_io.mutex);
+                      
+                      memset(&(d_ext_io.buf), 0, 8);
+                      memcpy(&(d_ext_io.buf), &buf, nbytes);
+                      
+                      pthread_mutex_unlock(&d_ext_io.mutex);
+                }
+            }
+        }
+    }
+}
