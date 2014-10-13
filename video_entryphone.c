@@ -84,10 +84,11 @@ struct app_config {
 } app_cfg;  
 
 // struct for io
-struct d_external_io {
-	int buf[1024]; 
-	pthread_mutex_t mutex;
-} d_ext_io;
+struct d_ext_io {
+    int buf[1024]; 
+    pthread_mutex_t mutex;
+    pthread_cond_t cond;
+} ext_io;
 
 // global helper vars
 int call_confirmed = 0;
@@ -214,9 +215,14 @@ int main(int argc, char *argv[])
 	// app loop
 	for (;;) {
 		// Codice di chiamata, lo sleep èusato solo per non consumare tutta la cpu sostituire con un thread che legge i tasti
+		pthread_mutex_lock(&(ext_io.mutex));
+		pthread_cond_wait(&(ext_io.cond), &(ext_io.mutex));
+		
 		pj_str_t uri = pj_str("sip:1012@pbx.vmh.it");
 		sleep(10);
 		pjsua_call_make_call(acc_id, &uri, 0, NULL, NULL, NULL);
+		
+		pthread_mutex_unlock(&(ext_io.mutex));
 	}
 	
 	// exit app
@@ -546,23 +552,23 @@ static void on_call_media_state(pjsua_call_id call_id)
 	pjsua_call_info ci; 
 	pjsua_call_get_info(call_id, &ci);
 	
-	if (app_cfg.video != 0) {
-	    pjsua_call_vid_strm_op op = PJSUA_CALL_VID_STRM_CHANGE_DIR;
-	    pjsua_call_vid_strm_op_param vop;
-	
-   	    vop.med_idx = 0;
-	    if (0 <= vop.med_idx && vop.med_idx < ci.media_cnt && ci.media[vop.med_idx].type == PJMEDIA_TYPE_VIDEO) {
-		    if (ci.media[vop.med_idx].status == PJSUA_CALL_MEDIA_NONE || ci.media[vop.med_idx].dir == PJMEDIA_DIR_NONE) {
-			    vop.dir = PJMEDIA_DIR_ENCODING;
-		    } else {
-			    op = PJSUA_CALL_VID_STRM_START_TRANSMIT;
-		    }
-	    } else {
-		    return;
-	    }
-	    pj_status_t status = PJ_ENOTFOUND;
-        pjsua_call_set_vid_strm(call_id, op, &vop);
-    }
+//	if (app_cfg.video != 0) {
+//	    pjsua_call_vid_strm_op op = PJSUA_CALL_VID_STRM_CHANGE_DIR;
+//	    pjsua_call_vid_strm_op_param vop;
+//	
+//   	    vop.med_idx = 0;
+//	    if (0 <= vop.med_idx && vop.med_idx < ci.media_cnt && ci.media[vop.med_idx].type == PJMEDIA_TYPE_VIDEO) {
+//		    if (ci.media[vop.med_idx].status == PJSUA_CALL_MEDIA_NONE || ci.media[vop.med_idx].dir == PJMEDIA_DIR_NONE) {
+//			    vop.dir = PJMEDIA_DIR_ENCODING;
+//		    } else {
+//			    op = PJSUA_CALL_VID_STRM_START_TRANSMIT;
+//		    }
+//	    } else {
+//		    return;
+//	    }
+//	    pj_status_t status = PJ_ENOTFOUND;
+//        pjsua_call_set_vid_strm(call_id, op, &vop);
+//    }
 
 	// check state if call is established/active
 	if (ci.media_status == PJSUA_CALL_MEDIA_ACTIVE) {
@@ -721,6 +727,9 @@ static void f_ext_io ()
 	int yes = 1;
 	int addrlen;
 	int i, j;
+	
+	pthread_mutex_init(&(ext_io.mutex), NULL);
+	
 	/* clear the master and temp sets */
 	FD_ZERO(&master);
 	FD_ZERO(&read_fds);
@@ -833,12 +842,13 @@ static void f_ext_io ()
 //                            }
 //                        }
 //                    }
-						pthread_mutex_lock(&d_ext_io.mutex);
+						pthread_mutex_lock(&(ext_io.mutex));
 
-						memset(&(d_ext_io.buf), 0, 8);
-						memcpy(&(d_ext_io.buf), &buf, nbytes);
-
-						pthread_mutex_unlock(&d_ext_io.mutex);
+						memset(&(ext_io.buf), 0, 8);
+                        memcpy(&(ext_io.buf), &buf, nbytes);
+                        pthread_cond_signal(&(ext_io.cond));
+                        
+                        pthread_mutex_unlock(&(ext_io.mutex));
 					}
 				}
 			}
